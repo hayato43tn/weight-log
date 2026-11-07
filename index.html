@@ -155,7 +155,11 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
 .bk-fileinfo .k{font-size:12px;color:var(--muted);white-space:nowrap}
 .bk-fileinfo .v{font-size:14px;font-weight:700;overflow-wrap:anywhere;text-align:right}
 .bk-file .sec{background:var(--surface2)}
-.bk-auto{display:flex;gap:8px;align-items:center;font-size:13px}
+.bk-auto{display:flex;flex-direction:column;gap:6px}
+.bk-auto .k{font-size:12px;color:var(--muted)}
+.bk-auto .seg{width:100%;display:grid;grid-template-columns:repeat(4,1fr);background:var(--surface)}
+.bk-auto .seg button{padding:7px 4px}
+.bk-auto .seg button:disabled{opacity:.4}
 .bk-status.warn{color:var(--bad);font-weight:500}
 .bk-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .sec{height:48px;border:0;background:var(--surface2);border-radius:12px;font-size:14px;font-weight:500}
@@ -327,7 +331,15 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
       <div class="bk-file" id="bk-filebox" hidden>
         <div class="bk-fileinfo"><span class="k">保存先</span><span class="v" id="bk-fname">未設定</span></div>
         <button type="button" class="sec" id="bk-pick">保存先を選ぶ</button>
-        <label class="bk-auto"><input type="checkbox" id="bk-auto" checked> 記録するたびに自動で上書き保存</label>
+        <div class="bk-auto">
+          <span class="k">自動で上書き保存する間隔（許可の確認が出るのはこのときだけ）</span>
+          <div class="seg" role="group" aria-label="自動保存の間隔" id="bk-freq">
+            <button type="button" data-freq="each" aria-pressed="false">毎回</button>
+            <button type="button" data-freq="day" aria-pressed="false">1日1回</button>
+            <button type="button" data-freq="week" aria-pressed="true">週1回</button>
+            <button type="button" data-freq="off" aria-pressed="false">しない</button>
+          </div>
+        </div>
       </div>
       <div class="bk-btns">
         <button type="button" class="sec" id="bk-json">バックアップを保存</button>
@@ -748,7 +760,7 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
   // Backup file: one fixed file the viewer picks once (same folder as this page), overwritten on every save.
   const FS_OK = () => Store.mode === 'local' && typeof window.showSaveFilePicker === 'function';
   const BK_NAME = 'weight-log-backup.json';
-  let bkHandle = null, bkAuto = true, bkChain = Promise.resolve(), bkError = '';
+  let bkHandle = null, bkFreq = 'week', bkChain = Promise.resolve(), bkError = '', bkDenied = false;
   const IDB = {
     open() { return new Promise((res, rej) => { const r = indexedDB.open('weightlog', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
     async get(k) { const db = await this.open(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); },
@@ -756,10 +768,10 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
   };
   async function loadBackupFile() {
     if (!FS_OK()) return;
-    try { const v = await IDB.get('backupFile'); if (v && v.handle) { bkHandle = v.handle; bkAuto = v.auto !== false; } } catch (e) {}
+    try { const v = await IDB.get('backupFile'); if (v && v.handle) { bkHandle = v.handle; bkFreq = ['each', 'day', 'week', 'off'].includes(v.freq) ? v.freq : (v.auto === false ? 'off' : 'week'); } } catch (e) {}
     renderBackup();
   }
-  async function saveBackupFile() { try { await IDB.set('backupFile', { handle: bkHandle, auto: bkAuto }); } catch (e) {} }
+  async function saveBackupFile() { try { await IDB.set('backupFile', { handle: bkHandle, freq: bkFreq }); } catch (e) {} }
   const backupJSON = () => JSON.stringify({ app: 'weight-log', version: 1, exportedAt: new Date().toISOString(), entries, settings }, null, 1);
   async function writeHandle(interactive) {
     let perm = await bkHandle.queryPermission({ mode: 'readwrite' });
@@ -769,16 +781,28 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
     await w.write(backupJSON()); await w.close();
   }
   function bkFail(e) {
-    bkError = e && e.name === 'PermissionError' ? '保存先への書き込みが許可されていません。「バックアップを保存」を押して許可してください。'
+    bkError = e && e.name === 'PermissionError' ? '今回は保存先への書き込みが許可されませんでした。保存したいときは「バックアップを保存」を押して「許可する」を選んでください。'
       : e && e.name === 'NotFoundError' ? '保存先のファイルが見つかりません。「保存先を選ぶ」でもう一度選んでください。'
       : '保存先に書き込めませんでした。「保存先を選ぶ」でもう一度選んでください。';
     renderBackup();
   }
+  // Chrome on Android forgets the file permission when the app closes, so ask only when a backup is due;
+  // once allowed in this session, keep the file current silently.
+  function backupDue() {
+    if (bkFreq === 'off') return false;
+    if (bkFreq === 'each' || !meta.lastBackup) return true;
+    const last = new Date(meta.lastBackup);
+    if (bkFreq === 'day') return ymd(last) !== today();
+    return Date.now() - meta.lastBackup >= 7 * 86400000;
+  }
   function autoBackup() {
-    if (!bkHandle || !bkAuto || !FS_OK()) return;
+    if (!bkHandle || bkFreq === 'off' || !FS_OK()) return;
     bkChain = bkChain.then(async () => {
-      try { await writeHandle(true); bkError = ''; await Store.set('meta', { lastBackup: Date.now() }); }
-      catch (e) { bkFail(e); }
+      try {
+        const perm = await bkHandle.queryPermission({ mode: 'readwrite' });
+        if (perm !== 'granted') { if (bkDenied || !backupDue()) return; }
+        await writeHandle(true); bkError = ''; await Store.set('meta', { lastBackup: Date.now() });
+      } catch (e) { if (e && e.name === 'PermissionError') bkDenied = true; bkFail(e); }
     });
   }
   function renderBackup() {
@@ -787,11 +811,11 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
     if (fs) {
       $('#bk-fname').textContent = bkHandle ? bkHandle.name : '未設定';
       $('#bk-pick').textContent = bkHandle ? '保存先を変更' : '保存先を選ぶ';
-      $('#bk-auto').checked = bkAuto; $('#bk-auto').disabled = !bkHandle;
+      $$('[data-freq]').forEach(x => { x.setAttribute('aria-pressed', x.dataset.freq === bkFreq); x.disabled = !bkHandle; });
     }
     $('#bk-note').textContent = Store.mode !== 'local'
       ? '記録はあなたのClaudeアカウントに保存されています。書き出したファイルは独立版の「バックアップから復元」でも読み込めます。'
-      : fs ? '「保存先を選ぶ」でこのページと同じフォルダを開き、' + BK_NAME + ' として保存してください。以後は同じファイルを上書きするので、バックアップは常に1つです。記録はこのブラウザの中にも保存されています。'
+      : fs ? '「保存先を選ぶ」でこのページと同じフォルダを開き、' + BK_NAME + ' として保存してください。以後は同じファイルを上書きするので、バックアップは常に1つです。AndroidのChromeはアプリを閉じると書き込みの許可を忘れるため、自動保存のときに許可の確認が出ます。'
       : 'このブラウザは保存先の指定に対応していないため、「バックアップを保存」はダウンロードフォルダに保存されます。同じ名前のファイルがあると番号付きで増えるので、古いものは手で消してください。';
     if (bkError) { st.className = 'bk-status warn'; st.textContent = bkError; return; }
     if (!n) { st.className = 'bk-status'; st.textContent = 'まだ記録がありません。前に書き出したファイルがあれば「バックアップから復元」で読み込めます。'; return; }
@@ -812,7 +836,10 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
     renderBackup();
   }
   $('#bk-pick').addEventListener('click', pickFile);
-  $('#bk-auto').addEventListener('change', async () => { bkAuto = $('#bk-auto').checked; await saveBackupFile(); toast(bkAuto ? '自動保存をオンにしました' : '自動保存をオフにしました'); });
+  $$('[data-freq]').forEach(x => x.addEventListener('click', async () => {
+    bkFreq = x.dataset.freq; await saveBackupFile(); renderBackup();
+    toast({ each: '記録するたびに保存します', day: '1日1回保存します', week: '週1回保存します', off: '自動保存をやめました' }[bkFreq]);
+  }));
   async function deliver(filename, text, mime) {
     if (Store.mode === 'claude') {
       const dl = await window.claude.use('downloads');
@@ -832,7 +859,7 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
     if (!entries.length) return toast('まだ記録がありません');
     if (FS_OK()) {
       if (!bkHandle) return pickFile();
-      try { await writeHandle(true); bkError = ''; await markBackup(); toast(bkHandle.name + ' を上書き保存しました'); }
+      try { await writeHandle(true); bkError = ''; bkDenied = false; await markBackup(); toast(bkHandle.name + ' を上書き保存しました'); }
       catch (e) { bkFail(e); }
       return;
     }
