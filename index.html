@@ -1,0 +1,938 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>体重・体脂肪ログ</title>
+<meta name="theme-color" content="#273431">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="体重ログ">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>:root{padding-top:env(safe-area-inset-top,0px)}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<style>
+/* Layout: phone app shell — header, one view at a time, fixed bottom tab bar (記録 / 指標 / グラフ / 履歴 / 設定).
+   Single dark theme by choice, a notch lighter than near-black: green-grey ground, raised slate cards, mint accent. */
+:root{
+  --bg:#1d2826; --surface:#273431; --surface2:#30403c; --line:#3b4b47;
+  --fg:#e9f0ee; --muted:#a0b2ad; --faint:#74867f;
+  --accent:#52c7b0; --accent-fg:#0a2420; --accent-soft:#2a4a43;
+  --hero:#21564b; --hero-2:#2a6a5c;
+  --fat:#f2a76c; --fat-soft:#4a3a2c;
+  --good:#74d6a0; --bad:#f38e77; --warn:#ecc76c; --info:#8fb8f0;
+  --f-num:"Barlow Semi Condensed","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
+  --r:16px; --tabh:64px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.6;-webkit-text-size-adjust:100%;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:12px calc(var(--tabh) + 28px + env(safe-area-inset-bottom,0px))}
+.wrap{max-width:520px;margin:0 auto}
+.view{display:flex;flex-direction:column;gap:16px}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 auto 14px;max-width:520px}
+.top h1{font-size:18px;font-weight:700;margin:0;letter-spacing:.02em;text-wrap:balance}
+.top .date{color:var(--muted);font-size:13px}
+.banner{font-size:13px;padding:10px 12px;border-radius:10px;background:var(--fat-soft);margin:0 auto 14px;max-width:520px}
+.card{background:var(--surface);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:14px}
+.card h2{font-size:14px;font-weight:700;margin:0;letter-spacing:.04em;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.card h2 small{font-weight:400;color:var(--muted);font-size:12px;letter-spacing:0}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.empty-note{font-size:14px;color:var(--muted);margin:0}
+
+/* Hero readout */
+.hero{background:linear-gradient(150deg,var(--hero-2),var(--hero));border-radius:20px;padding:20px 20px 18px;display:flex;flex-direction:column;gap:14px;position:relative;overflow:hidden}
+.hero::after{content:"";position:absolute;right:-70px;top:-70px;width:220px;height:220px;border-radius:50%;border:34px solid rgba(255,255,255,.05);pointer-events:none}
+.hero .label{font-size:13px;color:rgba(233,240,238,.78);font-weight:500}
+.hero .big{font-family:var(--f-num);font-weight:600;font-size:68px;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.hero .big small{font-size:22px;font-weight:500;margin-left:6px;color:rgba(233,240,238,.75)}
+.hero .when{font-size:13px;color:rgba(233,240,238,.72)}
+.hero-sub{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-top:1px solid rgba(255,255,255,.14);padding-top:12px;position:relative;z-index:1}
+.hero-sub .k{font-size:11px;color:rgba(233,240,238,.72)}
+.hero-sub .v{font-family:var(--f-num);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.2}
+.hero-sub .v small{font-size:12px;font-weight:500;margin-left:2px;color:rgba(233,240,238,.72)}
+.down{color:var(--good)} .up{color:var(--bad)} .flat{color:var(--muted)}
+.hero .down{color:#9ff0c2} .hero .up{color:#ffb09e} .hero .flat{color:rgba(233,240,238,.8)}
+
+/* Form */
+.field{display:flex;flex-direction:column;gap:6px}
+.field>label,.field>.lbl{font-size:13px;font-weight:500;color:var(--muted)}
+.stepper{display:grid;grid-template-columns:52px 1fr 52px;gap:8px}
+.stepper button{border:0;background:var(--surface2);border-radius:12px;font-size:24px;font-family:var(--f-num);min-height:58px}
+.stepper button:active{background:var(--accent-soft)}
+.inbox{position:relative;min-width:0}
+.inbox input{width:100%;height:58px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);
+  font-family:var(--f-num);font-size:32px;font-weight:600;text-align:center;padding:0 40px 0 12px;font-variant-numeric:tabular-nums}
+.inbox input::placeholder{color:var(--faint)}
+.inbox .unit{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none}
+.date-row{display:flex;gap:8px;align-items:center}
+.date-row input{flex:1;min-width:0;height:46px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);font:inherit;font-size:16px;padding:0 12px}
+.chip-btn{border:0;background:var(--surface2);border-radius:999px;padding:10px 16px;font-size:13px;white-space:nowrap}
+.primary{height:54px;border:0;border-radius:14px;background:var(--accent);color:var(--accent-fg);font-weight:700;font-size:16px}
+.primary:disabled{opacity:.5}
+.goal-row{display:flex;justify-content:space-between;font-size:14px;gap:8px}
+.bar{height:10px;border-radius:5px;background:var(--surface2);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:5px;width:0;transition:width .4s}
+
+/* Metrics */
+.mlist{display:flex;flex-direction:column}
+.m{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:12px 0;border-bottom:1px solid var(--line);align-items:center}
+.m:last-child{border-bottom:0;padding-bottom:0}
+.m:first-child{padding-top:0}
+.m .name{font-size:14px;font-weight:500}
+.m .val{font-family:var(--f-num);font-size:24px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;line-height:1.2}
+.m .val small{font-size:13px;color:var(--muted);font-weight:500;margin-left:2px}
+.m .desc{grid-column:1/-1;font-size:12px;color:var(--muted)}
+.m .desc .chip{margin-right:6px}
+.chip{display:inline-block;font-size:12px;font-weight:700;padding:1px 9px;border-radius:999px;background:var(--surface2);color:var(--fg);white-space:nowrap}
+.chip.good{background:rgba(116,214,160,.16);color:var(--good)}
+.chip.warn{background:rgba(236,199,108,.16);color:var(--warn)}
+.chip.bad{background:rgba(243,142,119,.16);color:var(--bad)}
+.chip.info{background:rgba(143,184,240,.16);color:var(--info)}
+.scale{position:relative;height:30px;margin-top:4px}
+.scale .track{display:flex;height:8px;border-radius:4px;overflow:hidden}
+.scale .track span{display:block;height:100%}
+.scale .mark{position:absolute;top:-3px;width:3px;height:14px;background:var(--fg);border-radius:2px;transform:translateX(-50%)}
+.scale .ticks{position:relative;height:14px;font-size:10px;color:var(--muted);font-family:var(--f-num)}
+.scale .ticks span{position:absolute;transform:translateX(-50%);top:2px}
+.need{font-size:13px;color:var(--muted);background:var(--surface2);border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.need button{border:0;background:var(--accent);color:var(--accent-fg);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;white-space:nowrap}
+
+/* Chart */
+.seg{display:inline-flex;background:var(--bg);border-radius:12px;padding:3px;gap:2px;max-width:100%;overflow-x:auto}
+.seg button{border:0;background:transparent;padding:7px 12px;border-radius:9px;font-size:13px;color:var(--muted);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--surface2);color:var(--fg);font-weight:700}
+.chart-head{display:flex;flex-direction:column;gap:8px}
+.chart-box{position:relative;width:100%;touch-action:pan-y}
+.chart-box svg{display:block;width:100%;height:auto;overflow:visible}
+.chart-cap{font-size:13px;color:var(--muted);min-height:1.7em;font-variant-numeric:tabular-nums}
+.chart-cap b{color:var(--fg);font-family:var(--f-num);font-size:18px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:16px;height:3px;border-radius:2px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.stat{background:var(--surface2);border-radius:12px;padding:10px 12px}
+.stat .k{font-size:12px;color:var(--muted)}
+.stat .v{font-family:var(--f-num);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.stat .v small{font-size:12px;color:var(--muted);margin-left:2px}
+
+/* History */
+.hist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.hist li{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.hist li:last-child{border-bottom:0}
+.hist .d{font-size:13px;color:var(--muted);min-width:70px}
+.hist .vals{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;min-width:0;background:none;border:0;padding:0;text-align:left}
+.hist .w{font-family:var(--f-num);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.hist .b{font-family:var(--f-num);font-size:16px;color:var(--fat);font-variant-numeric:tabular-nums}
+.hist .dl{font-family:var(--f-num);font-size:14px;font-weight:600}
+.del{border:1px solid var(--line);background:transparent;border-radius:9px;padding:6px 10px;font-size:12px;color:var(--muted)}
+.del.armed{border-color:var(--bad);color:var(--bad);font-weight:700}
+.more{align-self:center;border:0;background:none;color:var(--accent);font-size:14px;padding:6px}
+
+/* Settings */
+.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.form-grid label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:5px;min-width:0}
+.form-grid input{width:100%;min-width:0;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);font-family:var(--f-num);font-size:20px;text-align:center}
+.form-grid .full{grid-column:1/-1}
+.sexseg{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--bg);border-radius:12px;padding:4px}
+.sexseg button{border:0;background:transparent;height:40px;border-radius:9px;color:var(--muted);font-size:14px}
+.sexseg button[aria-pressed="true"]{background:var(--surface2);color:var(--fg);font-weight:700}
+.bk-status{font-size:13px;color:var(--muted);margin:0}
+.bk-file{background:var(--bg);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.bk-fileinfo{display:flex;justify-content:space-between;gap:10px;align-items:baseline;min-width:0}
+.bk-fileinfo .k{font-size:12px;color:var(--muted);white-space:nowrap}
+.bk-fileinfo .v{font-size:14px;font-weight:700;overflow-wrap:anywhere;text-align:right}
+.bk-file .sec{background:var(--surface2)}
+.bk-auto{display:flex;gap:8px;align-items:center;font-size:13px}
+.bk-status.warn{color:var(--bad);font-weight:500}
+.bk-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sec{height:48px;border:0;background:var(--surface2);border-radius:12px;font-size:14px;font-weight:500}
+.sec.wide{grid-column:1/-1}
+.sec:active{background:var(--accent-soft)}
+.confirm{border:1px solid var(--accent);background:var(--accent-soft);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;font-size:14px}
+.confirm .row{display:flex;gap:8px}
+.confirm .row button{flex:1;height:44px;border-radius:10px;font-size:14px}
+.confirm .ok{border:0;background:var(--accent);color:var(--accent-fg);font-weight:700}
+.confirm .ng{border:1px solid var(--line);background:var(--surface)}
+.confirm label{display:flex;gap:8px;align-items:center;font-size:13px}
+
+/* Tab bar */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+.tabbar nav{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);height:var(--tabh)}
+.tabbar button{border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--faint);font-size:11px;font-weight:500}
+.tabbar button svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tabbar button[aria-current="page"]{color:var(--accent);font-weight:700}
+
+.toast{position:fixed;left:50%;bottom:calc(var(--tabh) + 16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(16px);
+  background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;max-width:calc(100% - 32px);text-align:center;z-index:30}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (prefers-reduced-motion: reduce){.toast,.bar i{transition:none}}
+</style>
+
+<header class="top">
+  <h1>体重・体脂肪ログ</h1>
+  <span class="date" id="today-label"></span>
+</header>
+<div class="banner" id="banner" hidden></div>
+
+<div class="wrap">
+  <!-- 記録 -->
+  <section class="view" id="v-rec" data-view="rec">
+    <div class="hero" aria-label="最新の記録">
+      <div>
+        <div class="label">最新の体重</div>
+        <div class="big" id="r-w">—<small>kg</small></div>
+        <div class="when" id="r-when">まだ記録がありません</div>
+      </div>
+      <div class="hero-sub">
+        <div><div class="k">体脂肪率</div><div class="v" id="r-bf">—</div></div>
+        <div><div class="k">前回比</div><div class="v" id="r-d1">—</div></div>
+        <div><div class="k">7日前比</div><div class="v" id="r-d7">—</div></div>
+      </div>
+    </div>
+
+    <form class="card" id="form" novalidate>
+      <h2>今日の記録 <small id="f-mode"></small></h2>
+      <div class="field">
+        <label for="f-date">日付</label>
+        <div class="date-row">
+          <input type="date" id="f-date" required>
+          <button type="button" class="chip-btn" id="btn-today">今日</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="f-w">体重</label>
+        <div class="stepper">
+          <button type="button" data-step="w" data-d="-0.1" aria-label="体重を0.1減らす">−</button>
+          <div class="inbox"><input id="f-w" inputmode="decimal" autocomplete="off" placeholder="0.0"><span class="unit">kg</span></div>
+          <button type="button" data-step="w" data-d="0.1" aria-label="体重を0.1増やす">＋</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="f-bf">体脂肪率</label>
+        <div class="stepper">
+          <button type="button" data-step="bf" data-d="-0.1" aria-label="体脂肪率を0.1減らす">−</button>
+          <div class="inbox"><input id="f-bf" inputmode="decimal" autocomplete="off" placeholder="0.0"><span class="unit">%</span></div>
+          <button type="button" data-step="bf" data-d="0.1" aria-label="体脂肪率を0.1増やす">＋</button>
+        </div>
+      </div>
+      <button type="submit" class="primary" id="f-submit">記録する</button>
+      <p class="hint">±ボタンは前回の値から0.1ずつ動きます。毎日同じ条件（起床後・トイレの後など）で測ると比べやすくなります。</p>
+    </form>
+
+    <div class="card" id="goal-card">
+      <h2>目標まで <small id="goal-target"></small></h2>
+      <div id="goal-body"></div>
+    </div>
+  </section>
+
+  <!-- 指標 -->
+  <section class="view" id="v-body" data-view="body" hidden>
+    <div class="card">
+      <h2>体格 <small id="m-basis"></small></h2>
+      <div id="m-need-h"></div>
+      <div class="mlist" id="m-frame"></div>
+    </div>
+    <div class="card">
+      <h2>体組成</h2>
+      <div class="mlist" id="m-comp"></div>
+    </div>
+    <div class="card">
+      <h2>代謝</h2>
+      <div class="mlist" id="m-meta"></div>
+    </div>
+    <div class="card">
+      <h2>ペースと継続</h2>
+      <div class="mlist" id="m-pace"></div>
+    </div>
+    <p class="hint">判定はBMIが日本肥満学会、基礎代謝がMifflin-St Jeor式（体脂肪率があればKatch-McArdle式も）による目安です。体脂肪率の判定は一般的な目安で、体組成計のメーカーによって基準が少し違います。</p>
+  </section>
+
+  <!-- グラフ -->
+  <section class="view" id="v-graph" data-view="graph" hidden>
+    <div class="card">
+      <div class="chart-head">
+        <div class="seg" role="group" aria-label="表示する項目">
+          <button type="button" data-kind="w" aria-pressed="true">体重</button>
+          <button type="button" data-kind="bf" aria-pressed="false">体脂肪率</button>
+          <button type="button" data-kind="fm" aria-pressed="false">脂肪量</button>
+          <button type="button" data-kind="lm" aria-pressed="false">除脂肪量</button>
+        </div>
+        <div class="seg" role="group" aria-label="期間">
+          <button type="button" data-range="30" aria-pressed="true">30日</button>
+          <button type="button" data-range="90" aria-pressed="false">90日</button>
+          <button type="button" data-range="365" aria-pressed="false">1年</button>
+          <button type="button" data-range="0" aria-pressed="false">全期間</button>
+        </div>
+      </div>
+      <div class="chart-cap" id="chart-cap">&nbsp;</div>
+      <div class="chart-box" id="chart-box"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="card">
+      <h2>この期間 <small id="st-range"></small></h2>
+      <div class="stats" id="stats"></div>
+    </div>
+  </section>
+
+  <!-- 履歴 -->
+  <section class="view" id="v-hist" data-view="hist" hidden>
+    <div class="card">
+      <h2>履歴 <small id="hist-count"></small></h2>
+      <ul class="hist" id="hist"></ul>
+      <button type="button" class="more" id="more" hidden>もっと見る</button>
+    </div>
+  </section>
+
+  <!-- 設定 -->
+  <section class="view" id="v-prefs" data-view="prefs" hidden>
+    <div class="card">
+      <h2>プロフィール</h2>
+      <div class="form-grid">
+        <label>身長 cm<input id="s-h" inputmode="decimal" autocomplete="off" placeholder="170.0"></label>
+        <label>年齢<input id="s-age" inputmode="numeric" autocomplete="off" placeholder="40"></label>
+        <div class="full">
+          <div class="hint" style="margin-bottom:5px">性別（体脂肪率の判定と基礎代謝の計算に使います）</div>
+          <div class="sexseg" role="group" aria-label="性別">
+            <button type="button" data-sex="m" aria-pressed="false">男性</button>
+            <button type="button" data-sex="f" aria-pressed="false">女性</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>目標</h2>
+      <div class="form-grid">
+        <label>目標体重 kg<input id="s-gw" inputmode="decimal" autocomplete="off"></label>
+        <label>目標体脂肪率 %<input id="s-gbf" inputmode="decimal" autocomplete="off"></label>
+      </div>
+      <button type="button" class="primary" id="s-save">設定を保存</button>
+    </div>
+    <div class="card" aria-label="バックアップ">
+      <h2>バックアップ</h2>
+      <p class="bk-status" id="bk-status"></p>
+      <div class="bk-file" id="bk-filebox" hidden>
+        <div class="bk-fileinfo"><span class="k">保存先</span><span class="v" id="bk-fname">未設定</span></div>
+        <button type="button" class="sec" id="bk-pick">保存先を選ぶ</button>
+        <label class="bk-auto"><input type="checkbox" id="bk-auto" checked> 記録するたびに自動で上書き保存</label>
+      </div>
+      <div class="bk-btns">
+        <button type="button" class="sec" id="bk-json">バックアップを保存</button>
+        <button type="button" class="sec" id="bk-csv">CSVで書き出し</button>
+        <button type="button" class="sec wide" id="bk-import">バックアップから復元</button>
+      </div>
+      <input type="file" id="bk-file" accept=".json,.csv,application/json,text/csv,text/plain" hidden>
+      <div class="confirm" id="bk-confirm" hidden>
+        <div id="bk-msg"></div>
+        <label><input type="checkbox" id="bk-replace"> 今の記録を全部消してから読み込む</label>
+        <div class="row"><button type="button" class="ng" id="bk-cancel">やめる</button><button type="button" class="ok" id="bk-run">読み込む</button></div>
+      </div>
+      <p class="hint" id="bk-note"></p>
+    </div>
+  </section>
+</div>
+
+<div class="tabbar">
+  <nav aria-label="画面の切り替え">
+    <button type="button" data-tab="rec"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></svg>記録</button>
+    <button type="button" data-tab="body"><svg viewBox="0 0 24 24"><path d="M4 16a8 8 0 0 1 16 0"/><path d="M12 16l4-5"/><path d="M4 19h16"/></svg>指標</button>
+    <button type="button" data-tab="graph"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M5 15l4-4 3 3 6-7"/></svg>グラフ</button>
+    <button type="button" data-tab="hist"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>履歴</button>
+    <button type="button" data-tab="prefs"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>設定</button>
+  </nav>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const $$ = s => [...document.querySelectorAll(s)];
+  const WD = ['日','月','火','水','木','金','土'];
+  let entries = [], settings = {}, meta = {};
+  let kind = 'w', range = 30, histLimit = 40, tab = 'rec';
+  let formDirty = false, settingsDirty = false, sexSel = null;
+
+  // ---------- helpers ----------
+  const pad = n => String(n).padStart(2, '0');
+  const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  const today = () => ymd(new Date());
+  const pd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+  const dayNum = s => Math.round(pd(s).getTime() / 86400000);
+  const md = s => { const d = pd(s); return (d.getMonth() + 1) + '/' + d.getDate(); };
+  const mdw = s => md(s) + '(' + WD[pd(s).getDay()] + ')';
+  const f1 = n => (n == null || isNaN(n)) ? '—' : n.toFixed(1);
+  const num = v => { if (v == null) return null; const s = String(v).trim().replace(/[０-９．]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(',', '.'); if (s === '') return null; const n = Number(s); return isFinite(n) ? Math.round(n * 10) / 10 : NaN; };
+  const signed = d => (d > 0.049 ? '+' : d < -0.049 ? '−' : '±') + Math.abs(d).toFixed(1);
+  const dcls = d => Math.abs(d) < 0.05 ? 'flat' : d < 0 ? 'down' : 'up';
+  const isN = v => typeof v === 'number' && isFinite(v);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  let toastT;
+  function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400); }
+  function banner(msg) { const b = $('#banner'); b.textContent = msg || ''; b.hidden = !msg; }
+  const withW = () => entries.filter(e => isN(e.w));
+  const withBf = () => entries.filter(e => isN(e.bf));
+  const byDate = d => entries.find(e => e.date === d);
+  const lastW = () => { const a = withW(); return a[a.length - 1]; };
+  const lastBoth = () => [...entries].reverse().find(e => isN(e.w) && isN(e.bf));
+  const hM = () => isN(settings.height) ? settings.height / 100 : null;
+  // 7-day moving average of weight at a given date
+  const ma7 = (date, list = withW()) => { const dn = dayNum(date); const win = list.filter(x => { const k = dn - dayNum(x.date); return k >= 0 && k < 7; }); return win.length ? win.reduce((s, x) => s + x.w, 0) / win.length : null; };
+
+  // ---------- storage (Claude db when available, otherwise this browser) ----------
+  const Store = {
+    mode: 'local', col: null, docs: {}, KEY: 'weightlog.v1',
+    async set(id, body) {
+      if (this.col) return this.col.doc(id).set(body);
+      const prev = this.docs[id]; this.docs[id] = body;
+      try { this.persist(); } catch (e) { if (prev) this.docs[id] = prev; else delete this.docs[id]; throw e; }
+      ingest(this.docs);
+      if (id !== 'meta') autoBackup();
+    },
+    async del(id) {
+      if (this.col) return this.col.doc(id).delete();
+      const prev = this.docs[id]; delete this.docs[id];
+      try { this.persist(); } catch (e) { this.docs[id] = prev; throw e; }
+      ingest(this.docs);
+      if (id !== 'meta') autoBackup();
+    },
+    persist() { localStorage.setItem(this.KEY, JSON.stringify({ docs: this.docs })); },
+    loadLocal() {
+      try {
+        const raw = localStorage.getItem(this.KEY);
+        if (raw) { const s = JSON.parse(raw); if (s && s.docs) this.docs = s.docs; if (s && s.lastBackup && !this.docs.meta) this.docs.meta = { lastBackup: s.lastBackup }; }
+        return true;
+      } catch (e) { return false; }
+    }
+  };
+  function ingest(docs) {
+    const list = []; let s = {}, m = {};
+    Object.keys(docs).forEach(id => { const v = docs[id]; if (!v) return; if (id === 'settings') s = v; else if (id === 'meta') m = v; else if (typeof v.date === 'string') list.push(v); });
+    entries = list.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    settings = s; meta = m;
+    renderAll();
+  }
+
+  // ---------- tabs ----------
+  const TABS = ['rec', 'body', 'graph', 'hist', 'prefs'];
+  function showTab(t, push) {
+    if (!TABS.includes(t)) t = 'rec';
+    tab = t;
+    $$('[data-view]').forEach(v => { v.hidden = v.dataset.view !== t; });
+    $$('[data-tab]').forEach(b => b.toggleAttribute('aria-current', false) || (b.dataset.tab === t && b.setAttribute('aria-current', 'page')));
+    if (push) { try { history.replaceState(null, '', '#' + t); } catch (e) { location.hash = t; } }
+    window.scrollTo(0, 0);
+    if (t === 'graph') renderChart();
+  }
+  $$('[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab, true)));
+  window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
+  function goPrefs() { showTab('prefs', true); }
+
+  // ---------- 記録 ----------
+  function renderRec() {
+    const ws = withW(), lw = ws[ws.length - 1], pw = ws[ws.length - 2];
+    $('#r-w').innerHTML = (lw ? f1(lw.w) : '—') + '<small>kg</small>';
+    $('#r-when').textContent = lw ? lw.date.replace(/-/g, '/') + ' 時点' : 'まだ記録がありません。下のフォームから最初の1件を入れてください。';
+    const bs = withBf(), lb = bs[bs.length - 1];
+    $('#r-bf').innerHTML = lb ? f1(lb.bf) + '<small>%</small>' : '—';
+    const d1 = $('#r-d1'), d7 = $('#r-d7');
+    if (lw && pw) { const d = lw.w - pw.w; d1.className = 'v ' + dcls(d); d1.innerHTML = signed(d) + '<small>kg</small>'; } else { d1.className = 'v flat'; d1.textContent = '—'; }
+    const ref = lw && [...ws].reverse().find(e => dayNum(lw.date) - dayNum(e.date) >= 7);
+    if (ref) { const d = lw.w - ref.w; d7.className = 'v ' + dcls(d); d7.innerHTML = signed(d) + '<small>kg</small>'; } else { d7.className = 'v flat'; d7.textContent = '—'; }
+
+    // goal card
+    const g = settings.goalW, gb = $('#goal-body');
+    $('#goal-target').textContent = g ? '目標 ' + f1(g) + 'kg' + (isN(settings.goalBf) ? '・' + f1(settings.goalBf) + '%' : '') : '';
+    if (!g) { gb.innerHTML = '<div class="need"><span>目標体重を決めると、残りと進み具合が出ます。</span><button type="button" data-go="prefs">設定する</button></div>'; }
+    else if (!lw) { gb.innerHTML = '<p class="empty-note">記録すると目標までの残りが出ます。</p>'; }
+    else {
+      const start = ws[0].w, rem = lw.w - g;
+      let p = start === g ? (rem <= 0 ? 1 : 0) : (start - lw.w) / (start - g);
+      p = Math.max(0, Math.min(1, p));
+      let h = `<div class="goal-row"><span>${rem > 0.05 ? 'あと <b class="num" style="font-size:20px">' + rem.toFixed(1) + '</b> kg' : '目標を達成しています'}</span><span class="num" style="color:var(--muted)">${Math.round(p * 100)}%</span></div><div class="bar"><i style="width:${(p * 100).toFixed(1)}%"></i></div>`;
+      h += `<p class="hint">開始 ${f1(start)}kg（${md(ws[0].date)}）から ${signed(lw.w - start)}kg</p>`;
+      if (isN(settings.goalBf) && lb) { const rb = lb.bf - settings.goalBf; h += `<div class="goal-row" style="margin-top:4px"><span>体脂肪率 ${rb > 0.05 ? 'あと <b class="num" style="font-size:18px;color:var(--fat)">' + rb.toFixed(1) + '</b> %' : 'は目標に届いています'}</span></div>`; }
+      gb.innerHTML = h;
+    }
+  }
+  document.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) showTab(b.dataset.go, true); });
+
+  function fillForm() {
+    const d = $('#f-date').value || today();
+    const e = byDate(d), ws = withW(), bs = withBf();
+    $('#f-w').value = e && isN(e.w) ? f1(e.w) : '';
+    $('#f-bf').value = e && isN(e.bf) ? f1(e.bf) : '';
+    $('#f-w').placeholder = ws.length ? f1(ws[ws.length - 1].w) : '0.0';
+    $('#f-bf').placeholder = bs.length ? f1(bs[bs.length - 1].bf) : '0.0';
+    $('#f-submit').textContent = e ? 'この日の記録を更新' : '記録する';
+    $('#f-mode').textContent = e ? md(d) + ' の記録を修正できます' : (d === today() ? '' : md(d) + ' の分を入力');
+    formDirty = false;
+  }
+  $('#f-date').value = today();
+  $('#f-date').addEventListener('change', fillForm);
+  $('#btn-today').addEventListener('click', () => { $('#f-date').value = today(); fillForm(); });
+  ['#f-w', '#f-bf'].forEach(s => $(s).addEventListener('input', () => { formDirty = true; }));
+  $$('[data-step]').forEach(b => b.addEventListener('click', () => {
+    const inp = $('#f-' + b.dataset.step);
+    let v = num(inp.value); if (v == null || isNaN(v)) v = num(inp.placeholder);
+    if (v == null || isNaN(v) || v === 0) v = b.dataset.step === 'w' ? 60 : 20;
+    inp.value = Math.max(0, v + Number(b.dataset.d)).toFixed(1);
+    formDirty = true;
+  }));
+  $('#form').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const date = $('#f-date').value, w = num($('#f-w').value), bf = num($('#f-bf').value);
+    if (!date) return toast('日付を選んでください');
+    if (w == null && bf == null) return toast('体重か体脂肪率を入力してください');
+    if (w != null && (isNaN(w) || w < 20 || w > 300)) return toast('体重は 20〜300kg の数字で入力してください');
+    if (bf != null && (isNaN(bf) || bf < 1 || bf > 75)) return toast('体脂肪率は 1〜75% の数字で入力してください');
+    const body = { date, t: Date.now() }; if (w != null) body.w = w; if (bf != null) body.bf = bf;
+    const btn = $('#f-submit'); btn.disabled = true;
+    try { await Store.set('d' + date, body); formDirty = false; fillForm(); toast(md(date) + ' を保存しました'); }
+    catch (err) { toast(err && err.code === 'quota_exceeded' ? '保存容量がいっぱいです。古い記録を削除してください' : '保存できませんでした。もう一度押してください'); }
+    finally { btn.disabled = false; }
+  });
+
+  // ---------- 指標 ----------
+  const row = (name, val, unit, desc) => `<div class="m"><div class="name">${name}</div><div class="val">${val}${unit ? '<small>' + unit + '</small>' : ''}</div>${desc ? '<div class="desc">' + desc + '</div>' : ''}</div>`;
+  const chip = (t, c) => `<span class="chip ${c || ''}">${t}</span>`;
+  function bmiClass(b) {
+    if (b < 18.5) return ['低体重', 'info'];
+    if (b < 25) return ['普通体重', 'good'];
+    if (b < 30) return ['肥満（1度）', 'warn'];
+    if (b < 35) return ['肥満（2度）', 'bad'];
+    if (b < 40) return ['肥満（3度）', 'bad'];
+    return ['肥満（4度）', 'bad'];
+  }
+  function bfClass(bf, sex) {
+    const t = sex === 'f' ? [20, 30, 35] : [10, 20, 25];
+    if (bf < t[0]) return ['低め', 'info'];
+    if (bf < t[1]) return ['標準', 'good'];
+    if (bf < t[2]) return ['やや高め', 'warn'];
+    return ['高め', 'bad'];
+  }
+  function bmiScale(b) {
+    const lo = 15, hi = 40, P = v => ((Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo) * 100).toFixed(1) + '%';
+    const zones = [[15, 18.5, 'var(--info)'], [18.5, 25, 'var(--good)'], [25, 30, 'var(--warn)'], [30, 40, 'var(--bad)']];
+    return `<div class="scale" aria-hidden="true"><div class="track">${zones.map(z => `<span style="width:${((z[1] - z[0]) / (hi - lo) * 100).toFixed(2)}%;background:${z[2]};opacity:.55"></span>`).join('')}</div>
+      <div class="mark" style="left:${P(b)}"></div><div class="ticks">${[18.5, 25, 30, 35].map(t => `<span style="left:${P(t)}">${t}</span>`).join('')}</div></div>`;
+  }
+  function renderBody() {
+    const lw = lastW(), lb = lastBoth(), h = hM(), sex = settings.sex, age = settings.age;
+    $('#m-basis').textContent = lw ? md(lw.date) + ' の ' + f1(lw.w) + 'kg で計算' : '';
+    // 体格
+    const needs = [];
+    if (!h) needs.push('身長'); if (!isN(age)) needs.push('年齢'); if (!sex) needs.push('性別');
+    $('#m-need-h').innerHTML = needs.length ? `<div class="need"><span>${needs.join('・')}を入れると、すべての指標が出ます。</span><button type="button" data-go="prefs">設定する</button></div>` : '';
+    let f = '';
+    if (lw && h) {
+      const bmi = lw.w / (h * h), c = bmiClass(bmi);
+      f += row('BMI', bmi.toFixed(1), '', chip(c[0], c[1]) + '18.5〜25未満が普通体重' + bmiScale(bmi));
+      const std = 22 * h * h, diff = lw.w - std;
+      f += row('適正体重', f1(std), 'kg', 'BMI 22 になる体重。今との差 ' + signed(diff) + 'kg');
+      f += row('普通体重の範囲', (18.5 * h * h).toFixed(1) + '〜' + (25 * h * h - 0.1).toFixed(1), 'kg', 'BMI 18.5〜25未満に入る体重の幅');
+    } else if (!lw) f = '<p class="empty-note">記録すると表示されます。</p>';
+    else f = '<p class="empty-note">身長を入れるとBMIと適正体重が出ます。</p>';
+    $('#m-frame').innerHTML = f;
+    // 体組成
+    let c = '';
+    if (lb) {
+      const fm = lb.w * lb.bf / 100, lm = lb.w - fm;
+      if (sex) { const k = bfClass(lb.bf, sex); c += row('体脂肪率', f1(lb.bf), '%', chip(k[0], k[1]) + (sex === 'f' ? '女性は20〜30%未満が標準の目安' : '男性は10〜20%未満が標準の目安')); }
+      else c += row('体脂肪率', f1(lb.bf), '%', '性別を入れると判定が出ます');
+      c += row('脂肪量', f1(fm), 'kg', '体重 × 体脂肪率');
+      c += row('除脂肪量', f1(lm), 'kg', '筋肉・骨・水分など脂肪以外の重さ。減量中はここを落とさないのが理想です');
+      const first = entries.find(e => isN(e.w) && isN(e.bf));
+      if (first && first !== lb) {
+        const dF = fm - first.w * first.bf / 100, dL = lm - (first.w - first.w * first.bf / 100);
+        c += row('開始からの内訳', '', '', `${md(first.date)}から　脂肪 <b class="num ${dcls(dF)}">${signed(dF)}kg</b>　除脂肪 <b class="num ${dL < -0.05 ? 'up' : 'flat'}">${signed(dL)}kg</b>`);
+      }
+      if (h) { const ffmi = lm / (h * h); c += row('FFMI（除脂肪量指数）', ffmi.toFixed(1), '', '除脂肪量 ÷ 身長²。筋肉の多さの目安で、一般に男性18〜20・女性15〜17くらいが平均的です'); }
+    } else c = '<p class="empty-note">体重と体脂肪率を同じ日に記録すると、脂肪量と除脂肪量が出ます。</p>';
+    $('#m-comp').innerHTML = c;
+    // 代謝
+    let m = '';
+    if (lw && h && isN(age) && sex) {
+      const bmr = 10 * lw.w + 6.25 * h * 100 - 5 * age + (sex === 'f' ? -161 : 5);
+      m += row('基礎代謝', Math.round(bmr).toLocaleString(), 'kcal/日', '何もしなくても1日に使うエネルギー（Mifflin-St Jeor式）');
+      m += row('1日の消費の目安', Math.round(bmr * 1.375).toLocaleString() + '〜' + Math.round(bmr * 1.55).toLocaleString(), 'kcal', '基礎代謝 × 1.375〜1.55（軽い運動〜週3〜5日運動する人）');
+    }
+    if (lb) { const lm = lb.w * (1 - lb.bf / 100); m += row('基礎代謝（除脂肪量から）', Math.round(370 + 21.6 * lm).toLocaleString(), 'kcal/日', 'Katch-McArdle式。体脂肪率を使うので筋肉量が反映されます'); }
+    if (!m) m = '<p class="empty-note">身長・年齢・性別と体重があると基礎代謝が出ます。</p>';
+    $('#m-meta').innerHTML = m;
+    // ペース
+    let p = '';
+    const ws = withW();
+    if (ws.length >= 2) {
+      const L = ws[ws.length - 1], a = ma7(L.date);
+      const back = [...ws].reverse().find(e => dayNum(L.date) - dayNum(e.date) >= 14) || ws[0];
+      const span = dayNum(L.date) - dayNum(back.date);
+      if (span >= 7) {
+        const b = ma7(back.date), wk = (a - b) / span * 7, pct = wk / a * 100;
+        let cls = 'flat', t = '横ばい';
+        if (pct < -1.05) { cls = 'warn'; t = '速め'; } else if (pct <= -0.25) { cls = 'good'; t = '順調'; } else if (pct >= 0.25) { cls = 'bad'; t = '増加中'; }
+        p += row('週あたりの変化', signed(wk), 'kg/週', chip(t, cls) + `7日平均で${span}日間を比較（体重の ${signed(pct)}%/週）。週に体重の0.5〜1%くらいまでが無理のないペースの目安です`);
+        const g = settings.goalW;
+        if (g && a > g && wk < -0.02) {
+          const days = Math.ceil((a - g) / (-wk / 7)); const d = new Date(); d.setDate(d.getDate() + days);
+          p += row('目標到達の予測', (d.getMonth() + 1) + '/' + d.getDate(), '', `今のペースが続くと約${days}日後（${d.getFullYear()}年）`);
+        }
+      } else p += row('週あたりの変化', '—', '', '1週間以上記録するとペースが出ます');
+    }
+    // streak
+    if (entries.length) {
+      const set = new Set(entries.map(e => e.date)); let k = 0; const d = new Date();
+      if (!set.has(ymd(d))) d.setDate(d.getDate() - 1);
+      while (set.has(ymd(d))) { k++; d.setDate(d.getDate() - 1); }
+      const now = new Date(), ym = now.getFullYear() + '-' + pad(now.getMonth() + 1);
+      const month = entries.filter(e => e.date.startsWith(ym)).length;
+      p += row('連続記録', k, '日', `今月は${now.getDate()}日中 ${month}日記録`);
+      p += row('記録した日数', entries.length, '日', md(entries[0].date) + ' から');
+    } else p = '<p class="empty-note">記録するとペースと継続日数が出ます。</p>';
+    $('#m-pace').innerHTML = p;
+  }
+
+  // ---------- グラフ ----------
+  const KINDS = {
+    w: { label: '体重', unit: 'kg', color: 'var(--accent)', get: e => isN(e.w) ? e.w : null, goal: () => settings.goalW },
+    bf: { label: '体脂肪率', unit: '%', color: 'var(--fat)', get: e => isN(e.bf) ? e.bf : null, goal: () => settings.goalBf },
+    fm: { label: '脂肪量', unit: 'kg', color: 'var(--fat)', get: e => isN(e.w) && isN(e.bf) ? e.w * e.bf / 100 : null, goal: () => null },
+    lm: { label: '除脂肪量', unit: 'kg', color: 'var(--info)', get: e => isN(e.w) && isN(e.bf) ? e.w * (1 - e.bf / 100) : null, goal: () => null }
+  };
+  $$('[data-kind]').forEach(b => b.addEventListener('click', () => { kind = b.dataset.kind; $$('[data-kind]').forEach(x => x.setAttribute('aria-pressed', x === b)); renderChart(); }));
+  $$('[data-range]').forEach(b => b.addEventListener('click', () => { range = Number(b.dataset.range); $$('[data-range]').forEach(x => x.setAttribute('aria-pressed', x === b)); renderChart(); }));
+  let pts = [];
+  const NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+  function renderChart() {
+    if (tab !== 'graph') return;
+    const box = $('#chart-box'); box.innerHTML = '';
+    const K = KINDS[kind];
+    const all = entries.map(e => ({ date: e.date, v: K.get(e) })).filter(x => x.v != null);
+    const W = Math.max(280, box.clientWidth || 340), H = 220, L = 38, R = 14, T = 14, B = 26;
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': K.label + 'の推移' }, box);
+    $('#legend').innerHTML = '';
+    if (!all.length) {
+      el('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', fill: 'var(--muted)', 'font-size': 13 }, svg).textContent = kind === 'fm' || kind === 'lm' ? '体重と体脂肪率を同じ日に記録すると描かれます' : '記録するとここに推移が描かれます';
+      pts = []; $('#chart-cap').innerHTML = '&nbsp;'; renderStats([]); return;
+    }
+    const lastDay = Math.max(dayNum(all[all.length - 1].date), dayNum(today()));
+    const firstDay = range ? lastDay - range + 1 : dayNum(all[0].date);
+    const data = all.filter(e => dayNum(e.date) >= firstDay);
+    renderStats(data);
+    const ma = data.length > 2 ? data.map(e => { const dn = dayNum(e.date); const win = all.filter(x => { const k = dn - dayNum(x.date); return k >= 0 && k < 7; }); return { date: e.date, v: win.reduce((s, x) => s + x.v, 0) / win.length }; }) : [];
+    const goal = K.goal();
+    let vals = data.map(e => e.v); if (goal) vals.push(goal); if (!vals.length) vals = [all[all.length - 1].v];
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const span = Math.max(hi - lo, 0.4);
+    const step = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20].find(s => span / s <= 4) || 20;
+    lo = Math.floor((lo - span * 0.08) / step) * step; hi = Math.ceil((hi + span * 0.08) / step) * step;
+    if (hi - lo < step * 2) hi = lo + step * 2;
+    const x = dn => L + (lastDay === firstDay ? (W - L - R) / 2 : (dn - firstDay) / (lastDay - firstDay) * (W - L - R));
+    const y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+    const dec = step < 1 ? 1 : 0;
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      el('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: 'var(--line)', 'stroke-width': 1 }, svg);
+      el('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end', fill: 'var(--muted)', 'font-size': 11, 'font-family': 'var(--f-num)' }, svg).textContent = v.toFixed(dec);
+    }
+    [firstDay, Math.round((firstDay + lastDay) / 2), lastDay].forEach((dn, i) => {
+      const d = new Date(dn * 86400000);
+      el('text', { x: x(dn), y: H - 6, 'text-anchor': i === 0 ? 'start' : i === 2 ? 'end' : 'middle', fill: 'var(--muted)', 'font-size': 11, 'font-family': 'var(--f-num)' }, svg).textContent = (d.getUTCMonth() + 1) + '/' + d.getUTCDate();
+    });
+    if (goal) {
+      el('line', { x1: L, x2: W - R, y1: y(goal), y2: y(goal), stroke: K.color, 'stroke-width': 1.2, 'stroke-dasharray': '4 4', opacity: .8 }, svg);
+      el('text', { x: W - R, y: y(goal) - 5, 'text-anchor': 'end', fill: K.color, 'font-size': 11 }, svg).textContent = '目標 ' + f1(goal);
+    }
+    pts = data.map(e => ({ x: x(dayNum(e.date)), y: y(e.v), e }));
+    if (pts.length > 1) {
+      const line = pts.map((p, i) => (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1)).join('');
+      el('path', { d: line + `L${pts[pts.length - 1].x} ${H - B}L${pts[0].x} ${H - B}Z`, fill: K.color, opacity: .12 }, svg);
+      el('path', { d: line, fill: 'none', stroke: K.color, 'stroke-width': ma.length ? 1.2 : 2, 'stroke-linejoin': 'round', opacity: ma.length ? .55 : 1 }, svg);
+    }
+    if (ma.length > 1) el('path', { d: ma.map((m, i) => (i ? 'L' : 'M') + x(dayNum(m.date)).toFixed(1) + ' ' + y(m.v).toFixed(1)).join(''), fill: 'none', stroke: K.color, 'stroke-width': 2.6, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+    if (pts.length <= 120) pts.forEach((p, i) => el('circle', { cx: p.x, cy: p.y, r: i === pts.length - 1 ? 4.5 : 2.4, fill: i === pts.length - 1 ? K.color : 'var(--surface)', stroke: K.color, 'stroke-width': 1.5 }, svg));
+    else { const p = pts[pts.length - 1]; el('circle', { cx: p.x, cy: p.y, r: 4.5, fill: K.color }, svg); }
+    svg.__cursor = el('line', { x1: 0, x2: 0, y1: T, y2: H - B, stroke: 'var(--muted)', 'stroke-width': 1, opacity: 0 }, svg);
+    if (pts.length) setCap(pts[pts.length - 1].e);
+    $('#legend').innerHTML = `<span><i style="background:${K.color};opacity:.55"></i>毎日の値</span>` + (ma.length > 1 ? `<span><i style="background:${K.color}"></i>7日平均</span>` : '') + (goal ? `<span><i style="background:repeating-linear-gradient(90deg,${K.color} 0 4px,transparent 4px 7px)"></i>目標</span>` : '');
+  }
+  function setCap(e) { const K = KINDS[kind]; $('#chart-cap').innerHTML = esc(mdw(e.date)) + '　<b>' + f1(e.v) + K.unit + '</b>'; }
+  function renderStats(data) {
+    const K = KINDS[kind], u = K.unit;
+    $('#st-range').textContent = data.length ? md(data[0].date) + '〜' + md(data[data.length - 1].date) + '・' + data.length + '日分' : '';
+    if (!data.length) { $('#stats').innerHTML = '<p class="empty-note" style="grid-column:1/-1">この期間の記録はありません。</p>'; return; }
+    const v = data.map(d => d.v), ch = v[v.length - 1] - v[0];
+    const box = (k, val, cls) => `<div class="stat"><div class="k">${k}</div><div class="v ${cls || ''}">${val}<small>${u}</small></div></div>`;
+    const better = kind === 'lm' ? (ch > 0.05 ? 'down' : ch < -0.05 ? 'up' : 'flat') : dcls(ch);
+    $('#stats').innerHTML = box('変化', signed(ch), better) + box('平均', f1(v.reduce((s, x) => s + x, 0) / v.length)) + box('最低', f1(Math.min(...v))) + box('最高', f1(Math.max(...v)));
+  }
+  function pick(ev) {
+    const svg = $('#chart-box svg'); if (!svg || !pts.length) return;
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * svg.viewBox.baseVal.width / r.width;
+    let best = pts[0]; pts.forEach(p => { if (Math.abs(p.x - px) < Math.abs(best.x - px)) best = p; });
+    setCap(best.e);
+    if (svg.__cursor) { svg.__cursor.setAttribute('x1', best.x); svg.__cursor.setAttribute('x2', best.x); svg.__cursor.setAttribute('opacity', .6); }
+  }
+  $('#chart-box').addEventListener('pointerdown', pick);
+  $('#chart-box').addEventListener('pointermove', ev => { if (ev.buttons || ev.pointerType === 'mouse') pick(ev); });
+  let rz; new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(renderChart, 80); }).observe($('#chart-box'));
+
+  // ---------- 履歴 ----------
+  function renderHist() {
+    const ul = $('#hist'); ul.innerHTML = '';
+    const list = [...entries].reverse();
+    $('#hist-count').textContent = list.length ? list.length + '日分' : '';
+    if (!list.length) { const li = document.createElement('li'); li.style.display = 'block'; li.className = 'empty-note'; li.textContent = '記録した日がここに新しい順で並びます。'; ul.appendChild(li); $('#more').hidden = true; return; }
+    list.slice(0, histLimit).forEach(e => {
+      const li = document.createElement('li');
+      const d = document.createElement('span'); d.className = 'd'; d.textContent = mdw(e.date);
+      const vals = document.createElement('button'); vals.type = 'button'; vals.className = 'vals'; vals.setAttribute('aria-label', mdw(e.date) + 'の記録を編集');
+      const w = document.createElement('span'); w.className = 'w'; w.textContent = isN(e.w) ? f1(e.w) + 'kg' : '—';
+      const b = document.createElement('span'); b.className = 'b'; b.textContent = isN(e.bf) ? f1(e.bf) + '%' : '';
+      vals.append(w, b);
+      if (isN(e.w)) { const prev = [...entries].reverse().find(x => x.date < e.date && isN(x.w)); if (prev) { const dd = e.w - prev.w; const s = document.createElement('span'); s.className = 'dl ' + dcls(dd); s.textContent = signed(dd); vals.append(s); } }
+      vals.addEventListener('click', () => { $('#f-date').value = e.date; fillForm(); showTab('rec', true); });
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'del'; del.textContent = '削除';
+      let armT;
+      del.addEventListener('click', async () => {
+        if (!del.classList.contains('armed')) { del.classList.add('armed'); del.textContent = '本当に削除'; armT = setTimeout(() => { del.classList.remove('armed'); del.textContent = '削除'; }, 3000); return; }
+        clearTimeout(armT); del.disabled = true;
+        try { await Store.del('d' + e.date); toast(md(e.date) + ' の記録を削除しました'); }
+        catch (err) { del.disabled = false; toast('削除できませんでした。もう一度お試しください'); }
+      });
+      li.append(d, vals, del); ul.appendChild(li);
+    });
+    $('#more').hidden = list.length <= histLimit;
+  }
+  $('#more').addEventListener('click', () => { histLimit += 40; renderHist(); });
+
+  // ---------- 設定 ----------
+  function setSex(v) { sexSel = v; $$('[data-sex]').forEach(b => b.setAttribute('aria-pressed', b.dataset.sex === v)); }
+  $$('[data-sex]').forEach(b => b.addEventListener('click', () => { setSex(sexSel === b.dataset.sex ? null : b.dataset.sex); settingsDirty = true; }));
+  function fillSettings() {
+    if (settingsDirty) return;
+    $('#s-h').value = isN(settings.height) ? f1(settings.height) : '';
+    $('#s-age').value = isN(settings.age) ? String(settings.age) : '';
+    $('#s-gw').value = isN(settings.goalW) ? f1(settings.goalW) : '';
+    $('#s-gbf').value = isN(settings.goalBf) ? f1(settings.goalBf) : '';
+    setSex(settings.sex || null);
+  }
+  ['#s-h', '#s-age', '#s-gw', '#s-gbf'].forEach(s => $(s).addEventListener('input', () => { settingsDirty = true; }));
+  $('#s-save').addEventListener('click', async () => {
+    const h = num($('#s-h').value), age = num($('#s-age').value), gw = num($('#s-gw').value), gbf = num($('#s-gbf').value);
+    if ([h, age, gw, gbf].some(v => v != null && isNaN(v))) return toast('数字で入力してください');
+    if (h != null && (h < 100 || h > 230)) return toast('身長は 100〜230cm で入力してください');
+    if (age != null && (age < 10 || age > 110)) return toast('年齢は 10〜110 で入力してください');
+    if (gw != null && (gw < 20 || gw > 300)) return toast('目標体重は 20〜300kg で入力してください');
+    if (gbf != null && (gbf < 1 || gbf > 75)) return toast('目標体脂肪率は 1〜75% で入力してください');
+    const body = {}; if (h != null) body.height = h; if (age != null) body.age = Math.round(age); if (gw != null) body.goalW = gw; if (gbf != null) body.goalBf = gbf; if (sexSel) body.sex = sexSel;
+    const btn = $('#s-save'); btn.disabled = true;
+    try { await Store.set('settings', body); settingsDirty = false; fillSettings(); toast('設定を保存しました'); }
+    catch (err) { toast('保存できませんでした。もう一度お試しください'); }
+    finally { btn.disabled = false; }
+  });
+
+  // ---------- バックアップ ----------
+  // Backup file: one fixed file the viewer picks once (same folder as this page), overwritten on every save.
+  const FS_OK = () => Store.mode === 'local' && typeof window.showSaveFilePicker === 'function';
+  const BK_NAME = 'weight-log-backup.json';
+  let bkHandle = null, bkAuto = true, bkChain = Promise.resolve(), bkError = '';
+  const IDB = {
+    open() { return new Promise((res, rej) => { const r = indexedDB.open('weightlog', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+    async get(k) { const db = await this.open(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); },
+    async set(k, v) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); }
+  };
+  async function loadBackupFile() {
+    if (!FS_OK()) return;
+    try { const v = await IDB.get('backupFile'); if (v && v.handle) { bkHandle = v.handle; bkAuto = v.auto !== false; } } catch (e) {}
+    renderBackup();
+  }
+  async function saveBackupFile() { try { await IDB.set('backupFile', { handle: bkHandle, auto: bkAuto }); } catch (e) {} }
+  const backupJSON = () => JSON.stringify({ app: 'weight-log', version: 1, exportedAt: new Date().toISOString(), entries, settings }, null, 1);
+  async function writeHandle(interactive) {
+    let perm = await bkHandle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted' && interactive) perm = await bkHandle.requestPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') throw Object.assign(new Error('perm'), { name: 'PermissionError' });
+    const w = await bkHandle.createWritable();
+    await w.write(backupJSON()); await w.close();
+  }
+  function bkFail(e) {
+    bkError = e && e.name === 'PermissionError' ? '保存先への書き込みが許可されていません。「バックアップを保存」を押して許可してください。'
+      : e && e.name === 'NotFoundError' ? '保存先のファイルが見つかりません。「保存先を選ぶ」でもう一度選んでください。'
+      : '保存先に書き込めませんでした。「保存先を選ぶ」でもう一度選んでください。';
+    renderBackup();
+  }
+  function autoBackup() {
+    if (!bkHandle || !bkAuto || !FS_OK()) return;
+    bkChain = bkChain.then(async () => {
+      try { await writeHandle(true); bkError = ''; await Store.set('meta', { lastBackup: Date.now() }); }
+      catch (e) { bkFail(e); }
+    });
+  }
+  function renderBackup() {
+    const st = $('#bk-status'), n = entries.length, fs = FS_OK();
+    $('#bk-filebox').hidden = !fs;
+    if (fs) {
+      $('#bk-fname').textContent = bkHandle ? bkHandle.name : '未設定';
+      $('#bk-pick').textContent = bkHandle ? '保存先を変更' : '保存先を選ぶ';
+      $('#bk-auto').checked = bkAuto; $('#bk-auto').disabled = !bkHandle;
+    }
+    $('#bk-note').textContent = Store.mode !== 'local'
+      ? '記録はあなたのClaudeアカウントに保存されています。書き出したファイルは独立版の「バックアップから復元」でも読み込めます。'
+      : fs ? '「保存先を選ぶ」でこのページと同じフォルダを開き、' + BK_NAME + ' として保存してください。以後は同じファイルを上書きするので、バックアップは常に1つです。記録はこのブラウザの中にも保存されています。'
+      : 'このブラウザは保存先の指定に対応していないため、「バックアップを保存」はダウンロードフォルダに保存されます。同じ名前のファイルがあると番号付きで増えるので、古いものは手で消してください。';
+    if (bkError) { st.className = 'bk-status warn'; st.textContent = bkError; return; }
+    if (!n) { st.className = 'bk-status'; st.textContent = 'まだ記録がありません。前に書き出したファイルがあれば「バックアップから復元」で読み込めます。'; return; }
+    if (!meta.lastBackup) { st.className = 'bk-status' + (Store.mode === 'local' ? ' warn' : ''); st.textContent = n + '件の記録があります。まだバックアップしていません。'; return; }
+    const days = Math.floor((Date.now() - meta.lastBackup) / 86400000), d = new Date(meta.lastBackup);
+    st.className = 'bk-status' + (days >= 14 && Store.mode === 'local' ? ' warn' : '');
+    st.textContent = n + '件の記録　最後のバックアップ：' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + (days >= 1 ? '（' + days + '日前）' : '');
+  }
+  async function pickFile() {
+    try {
+      const opts = { suggestedName: BK_NAME, types: [{ description: 'バックアップ', accept: { 'application/json': ['.json'] } }] };
+      try { bkHandle = await window.showSaveFilePicker(Object.assign({ startIn: bkHandle || 'downloads' }, opts)); }
+      catch (e) { if (e && e.name === 'AbortError') throw e; bkHandle = await window.showSaveFilePicker(opts); }
+      bkError = ''; await saveBackupFile();
+      await writeHandle(true); await markBackup();
+      toast(bkHandle.name + ' に保存しました');
+    } catch (e) { if (!e || e.name !== 'AbortError') bkFail(e); }
+    renderBackup();
+  }
+  $('#bk-pick').addEventListener('click', pickFile);
+  $('#bk-auto').addEventListener('change', async () => { bkAuto = $('#bk-auto').checked; await saveBackupFile(); toast(bkAuto ? '自動保存をオンにしました' : '自動保存をオフにしました'); });
+  async function deliver(filename, text, mime) {
+    if (Store.mode === 'claude') {
+      const dl = await window.claude.use('downloads');
+      if (!dl) { toast('この画面ではファイルを保存できません'); return false; }
+      try { await dl.save({ filename, data: text }); return true; }
+      catch (e) { if (!e || e.code !== 'declined') toast('ファイルを保存できませんでした'); return false; }
+    }
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return true;
+  }
+  async function markBackup() { try { await Store.set('meta', { lastBackup: Date.now() }); } catch (e) {} }
+  $('#bk-json').addEventListener('click', async () => {
+    if (!entries.length) return toast('まだ記録がありません');
+    if (FS_OK()) {
+      if (!bkHandle) return pickFile();
+      try { await writeHandle(true); bkError = ''; await markBackup(); toast(bkHandle.name + ' を上書き保存しました'); }
+      catch (e) { bkFail(e); }
+      return;
+    }
+    const name = Store.mode === 'local' ? BK_NAME : 'weight-log-backup-' + today() + '.json';
+    if (await deliver(name, backupJSON(), 'application/json')) { await markBackup(); toast('バックアップを書き出しました'); }
+  });
+  $('#bk-csv').addEventListener('click', async () => {
+    if (!entries.length) return toast('まだ記録がありません');
+    const rows = ['日付,体重(kg),体脂肪率(%)'].concat(entries.map(e => [e.date, isN(e.w) ? e.w.toFixed(1) : '', isN(e.bf) ? e.bf.toFixed(1) : ''].join(',')));
+    if (await deliver(Store.mode === 'local' ? 'weight-log.csv' : 'weight-log-' + today() + '.csv', '﻿' + rows.join('\r\n'), 'text/csv')) { await markBackup(); toast('CSVを書き出しました'); }
+  });
+  let pending = null;
+  function normDate(s) { const m = String(s || '').trim().match(/^(\d{4})[-\/.年](\d{1,2})[-\/.月](\d{1,2})/); if (!m) return null; const d = new Date(+m[1], +m[2] - 1, +m[3]); return isNaN(d) || d.getMonth() !== +m[2] - 1 ? null : ymd(d); }
+  function cleanEntry(o) {
+    const date = normDate(o.date); if (!date) return null;
+    const w = num(o.w), bf = num(o.bf), e = { date, t: isN(o.t) ? o.t : Date.now() };
+    if (w != null && !isNaN(w) && w >= 20 && w <= 300) e.w = w;
+    if (bf != null && !isNaN(bf) && bf >= 1 && bf <= 75) e.bf = bf;
+    return (e.w != null || e.bf != null) ? e : null;
+  }
+  function parseBackup(text) {
+    const t = text.replace(/^﻿/, '').trim();
+    if (t.startsWith('{')) { const d = JSON.parse(t); if (!Array.isArray(d.entries)) throw new Error('format'); return { entries: d.entries.map(cleanEntry).filter(Boolean), settings: d.settings && typeof d.settings === 'object' ? d.settings : null }; }
+    const list = t.split(/\r?\n/).map(l => l.split(/[,\t]/)).map(c => cleanEntry({ date: c[0], w: c[1], bf: c[2] })).filter(Boolean);
+    if (!list.length) throw new Error('format');
+    return { entries: list, settings: null };
+  }
+  $('#bk-import').addEventListener('click', () => { $('#bk-file').value = ''; $('#bk-file').click(); });
+  $('#bk-file').addEventListener('change', async () => {
+    const f = $('#bk-file').files[0]; if (!f) return;
+    try {
+      pending = parseBackup(await f.text());
+      if (!pending.entries.length) throw new Error('empty');
+      const dates = pending.entries.map(e => e.date).sort(), overlap = pending.entries.filter(e => byDate(e.date)).length;
+      $('#bk-msg').textContent = f.name + ' に ' + pending.entries.length + '件の記録があります（' + md(dates[0]) + '〜' + md(dates[dates.length - 1]) + '）。' + (overlap ? '同じ日付の ' + overlap + '件はファイルの値で上書きします。' : '');
+      $('#bk-replace').checked = false; $('#bk-confirm').hidden = false;
+    } catch (e) { pending = null; toast('読み込めないファイルです。このアプリで書き出したJSONかCSVを選んでください'); }
+  });
+  $('#bk-cancel').addEventListener('click', () => { pending = null; $('#bk-confirm').hidden = true; });
+  $('#bk-run').addEventListener('click', async () => {
+    if (!pending) return;
+    const p = pending, replace = $('#bk-replace').checked; pending = null; $('#bk-confirm').hidden = true;
+    const newSettings = {};
+    if (p.settings) { ['goalW', 'goalBf', 'height', 'age'].forEach(k => { const v = num(p.settings[k]); if (v != null && !isNaN(v)) newSettings[k] = v; }); if (p.settings.sex === 'm' || p.settings.sex === 'f') newSettings.sex = p.settings.sex; }
+    if (Store.mode === 'local') {
+      const backup = JSON.stringify(Store.docs);
+      if (replace) Object.keys(Store.docs).forEach(k => { if (k !== 'settings' && k !== 'meta') delete Store.docs[k]; });
+      p.entries.forEach(e => { Store.docs['d' + e.date] = e; });
+      if (Object.keys(newSettings).length) Store.docs.settings = Object.assign({}, Store.docs.settings, newSettings);
+      try { Store.persist(); } catch (e) { Store.docs = JSON.parse(backup); toast('保存できませんでした。空き容量を確認してください'); return; }
+      ingest(Store.docs);
+      autoBackup();
+    } else {
+      toast('読み込み中…');
+      try {
+        if (replace) { const keep = new Set(p.entries.map(e => e.date)); for (const e of entries) if (!keep.has(e.date)) await Store.del('d' + e.date); }
+        for (const e of p.entries) await Store.set('d' + e.date, e);
+        if (Object.keys(newSettings).length) await Store.set('settings', Object.assign({}, settings, newSettings));
+      } catch (e) { toast('途中で保存できなくなりました。もう一度読み込んでください'); return; }
+    }
+    settingsDirty = false; formDirty = false;
+    toast(p.entries.length + '件を読み込みました');
+  });
+
+  function renderAll() {
+    renderRec(); renderBody(); renderHist(); fillSettings(); renderBackup();
+    if (!formDirty) fillForm();
+    renderChart();
+  }
+
+  // ---------- boot ----------
+  const now = new Date();
+  $('#today-label').textContent = (now.getMonth() + 1) + '月' + now.getDate() + '日(' + WD[now.getDay()] + ')';
+  showTab(location.hash.slice(1) || 'rec');
+
+  const C = window.claude;
+  if (C && C.use) {
+    Store.mode = 'claude';
+    renderAll();
+    (async () => {
+      const timer = setTimeout(() => banner('記録を読み込めていません。通信状態を確認してください。'), 10000);
+      const [db, user] = await Promise.all([C.use('db'), C.use('user')]);
+      const uid = user ? await user.id() : null;
+      if (!db || !uid) { clearTimeout(timer); banner('サインインしていないため、記録は保存されません。'); Store.mode = 'local'; Store.persist = () => {}; renderAll(); return; }
+      Store.col = db.collection('data/users/' + uid);
+      Store.col.onSnapshot(snap => {
+        if (!snap.metadata.fromCache) { clearTimeout(timer); banner(''); }
+        const docs = {}; snap.docs.forEach(d => { const v = d.data(); if (v) docs[d.id] = v; });
+        ingest(docs);
+      }, err => { clearTimeout(timer); banner(err && err.code === 'revoked' ? 'この記録にはアクセスできなくなりました。' : '記録を読み込めませんでした。ページを開き直してください。'); });
+    })();
+  } else {
+    if (!Store.loadLocal()) banner('このブラウザでは記録を保存できません。プライベートモードをやめるか、別のブラウザで開いてください。');
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    ingest(Store.docs);
+    loadBackupFile();
+    if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+
+</body>
+</html>
